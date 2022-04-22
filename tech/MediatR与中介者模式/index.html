@@ -1,0 +1,170 @@
+<!doctype html><html lang=en-us><head><meta charset=utf-8><meta http-equiv=x-ua-compatible content="IE=edge"><meta name=viewport content="width=device-width,initial-scale=1"><meta property="og:site_name" content="Ganymede"><meta property="og:type" content="article"><meta property="og:image" content="https://dukezys.github.io/img/02s.jpg"><meta property="twitter:image" content="https://dukezys.github.io/img/02s.jpg"><meta name=title content="MediatR与中介者模式"><meta property="og:title" content="MediatR与中介者模式"><meta property="twitter:title" content="MediatR与中介者模式"><meta name=description content="介绍MediatR与中介者模式"><meta property="og:description" content="介绍MediatR与中介者模式"><meta property="twitter:description" content="介绍MediatR与中介者模式"><meta property="twitter:card" content="summary"><meta name=keyword content="Duke, DukeSaika, Ganymede-, Ganymede, Blog, Duke的博客, 博客, 个人网站, 互联网, Web, .NET, Go, 分布式, Kubernetes, 微服务, Microservice"><link rel="shortcut icon" href=/img/favicon.ico><title>MediatR与中介者模式-Duke's Blog</title><link rel=canonical href=/tech/MediatR%E4%B8%8E%E4%B8%AD%E4%BB%8B%E8%80%85%E6%A8%A1%E5%BC%8F/><link rel=stylesheet href=/css/iDisqus.min.css><link rel=stylesheet href=/css/bootstrap.min.css><link rel=stylesheet href=/css/hugo-theme-cleanwhite.min.css><link rel=stylesheet href=/css/zanshang.css><link href=//cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.1/css/all.min.css rel=stylesheet type=text/css><script src=/js/jquery.min.js></script>
+<script src=/js/bootstrap.min.js></script>
+<script src=/js/hux-blog.min.js></script></head><nav class="navbar navbar-default navbar-custom navbar-fixed-top"><div class=container-fluid><div class="navbar-header page-scroll"><button type=button class=navbar-toggle>
+<span class=sr-only>Toggle navigation</span>
+<span class=icon-bar></span>
+<span class=icon-bar></span>
+<span class=icon-bar></span></button>
+<a class=navbar-brand href=/ style=color:#000>Ganymede</a></div><div id=huxblog_navbar><div class=navbar-collapse><ul class="nav navbar-nav navbar-right"><li><a href=/ style=color:#000>Home</a></li><li><a href=/categories/tech style=color:#000>tech</a></li><li><a href=/top/books/ style=color:#000>BOOKS</a></li><li><a href=/top/about/ style=color:#000>ABOUT</a></li><li><a href=/search style=color:#000><i class="fa fa-search"></i></a></li></ul></div></div></div></nav><script>var $body=document.body,$toggle=document.querySelector(".navbar-toggle"),$navbar=document.querySelector("#huxblog_navbar"),$collapse=document.querySelector(".navbar-collapse");$toggle.addEventListener("click",handleMagic);function handleMagic(){$navbar.className.indexOf("in")>0?($navbar.className=" ",setTimeout(function(){$navbar.className.indexOf("in")<0&&($collapse.style.height="0px")},400)):($collapse.style.height="auto",$navbar.className+=" in")}</script><style type=text/css>header.intro-header{background-image:url(/img/02s.jpg)}</style><header class=intro-header><div class=container><div class=row><div class="col-lg-8 col-lg-offset-2 col-md-10 col-md-offset-1"><div class=post-heading><div class=tags><a class=tag href=/tags/.net title=.NET>.NET</a>
+<a class=tag href=/tags/%E8%AE%BE%E8%AE%A1%E6%A8%A1%E5%BC%8F title=设计模式>设计模式</a></div><h1>MediatR与中介者模式</h1><h2 class=subheading></h2><span class=meta>Posted by
+ Duke
+on
+Monday, August 10, 2020</span></div></div></div></div></header><article><div class=container><div class=row><div class="col-lg-8 col-lg-offset-2
+col-md-10 col-md-offset-1
+post-container"><h1 id=mediatr与中介者模式>MediatR与中介者模式</h1><blockquote><p>MediatR是一款基于中介者模式的思想而实现的.NET library，主要是为了解决进程内消息发送与消息处理过程之间的耦合问题。例如，一个Controller需要调用相应的Repository进行业务逻辑处理，普通情况下，可以直接在Controller注入Repository，而在使用MediatR的情况下，可以先注入MediatR，再通过MediatR发送给Repository，减少了耦合。在本文中，为了更好地理解，将先介绍中介者模式及其C#的实现，然后会对MediatR及其应用进行介绍。</p></blockquote><h2 id=1-中介者模式><strong>1. 中介者模式</strong></h2><p>中介者模式简单来说，就是用一个中介对象来封装一系列的对象交互，使各个对象不需要显式地互相引用，从而达到了减少耦合的目的，同时也能让它们之间交互独立地变化 。</p><h3 id=11-中介者模式中的角色><strong>1.1 中介者模式中的角色</strong></h3><p>总的来说，中介者模式中的角色有以下几种 ：</p><ul><li><strong>Mediator（中介者）</strong>：通过定义一个接口与各同事对象进行通信。</li><li><strong>ConcreteMediator（具体中介者）</strong>：是中介者的具体实现，需要知道所协调的同事对象，用来协调各同事对象之间的行为。</li><li><strong>Colleague（同事接口）</strong>：定义了通过中介者与其他同事进行通信的接口</li><li><strong>ConcreteColleague（具体同事类）</strong>：同事接口的实现类，当一个同事对象需要与其他同事进行通信时，将统一通过中介者来进行通信。上文中提到的Controller与Repository都属于Colleague。</li></ul><h3 id=12-中介者模式的c实现><strong>1.2 中介者模式的C#实现</strong></h3><p>为了实现中介者模式，我们来简单实现一个消息通知系统，系统中有两个角色：Admin和User，两者可以通过中介者进行互相通信。</p><p>程序中主要有三个类：NotificationMediator（Mediator）、IPerson（Colleague）、Person（Concrete Colleague）。</p><p>首先是接口IPerson，定义了Send和Receive两个方法，用来发送和接收消息。</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-csharp data-lang=csharp><span style=display:flex><span>		<span style=color:#ff79c6>public</span> <span style=color:#ff79c6>interface</span> <span style=color:#50fa7b>IPerson</span>
+</span></span><span style=display:flex><span>		{
+</span></span><span style=display:flex><span>				<span style=color:#ff79c6>void</span> Send(<span style=color:#8be9fd>string</span> message);
+</span></span><span style=display:flex><span>		
+</span></span><span style=display:flex><span>				<span style=color:#ff79c6>void</span> Receive(<span style=color:#8be9fd>string</span> message, <span style=color:#8be9fd>string</span> sender);
+</span></span><span style=display:flex><span>		}
+</span></span><span style=display:flex><span>		
+</span></span></code></pre></div><p>其次是NotificationMediator的实现，在这里使用了EventHandler，作为消息通知。</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-csharp data-lang=csharp><span style=display:flex><span>		<span style=color:#ff79c6>public</span> <span style=color:#ff79c6>delegate</span> <span style=color:#ff79c6>void</span> NotificationEventHandler(<span style=color:#8be9fd>string</span> message, <span style=color:#8be9fd>string</span> sender);
+</span></span><span style=display:flex><span>		
+</span></span><span style=display:flex><span>		<span style=color:#ff79c6>public</span> <span style=color:#ff79c6>class</span> <span style=color:#50fa7b>NotificationMediator</span>
+</span></span><span style=display:flex><span>		{
+</span></span><span style=display:flex><span>				<span style=color:#ff79c6>public</span> <span style=color:#ff79c6>event</span> NotificationEventHandler NotificationReceived;
+</span></span><span style=display:flex><span>		
+</span></span><span style=display:flex><span>				<span style=color:#ff79c6>public</span> <span style=color:#ff79c6>void</span> Send(<span style=color:#8be9fd>string</span> message, <span style=color:#8be9fd>string</span> sender)
+</span></span><span style=display:flex><span>		    {
+</span></span><span style=display:flex><span>				    <span style=color:#ff79c6>if</span> (NotificationReceived != <span style=color:#ff79c6>null</span>)
+</span></span><span style=display:flex><span>		        {
+</span></span><span style=display:flex><span>				        NotificationReceived(message, sender);
+</span></span><span style=display:flex><span>		        }
+</span></span><span style=display:flex><span>		    }
+</span></span><span style=display:flex><span>		}
+</span></span></code></pre></div><p>最后我们对Person类进行实现，在这里设定Admin和User都是Person类的实例对象，但区别在于Role这个属性，在构造方法中引入mediator，并把Receive方法加到NotificationReceived里。</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-csharp data-lang=csharp><span style=display:flex><span>		<span style=color:#ff79c6>public</span> <span style=color:#ff79c6>class</span> <span style=color:#50fa7b>Person</span> : IPerson
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#ff79c6>private</span> NotificationMediator <span style=color:#bd93f9>_</span>mediator;
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>        <span style=color:#ff79c6>public</span> <span style=color:#8be9fd>string</span> Role { <span style=color:#ff79c6>get</span>; <span style=color:#ff79c6>set</span>; }
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>        <span style=color:#ff79c6>public</span> Person(NotificationMediator mediator, <span style=color:#8be9fd>string</span> role)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#bd93f9>_</span>mediator = mediator;
+</span></span><span style=display:flex><span>            Role = role;
+</span></span><span style=display:flex><span>            <span style=color:#bd93f9>_</span>mediator.NotificationReceived += <span style=color:#ff79c6>new</span> NotificationEventHandler(Receive);
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>        <span style=color:#ff79c6>public</span> <span style=color:#ff79c6>void</span> Receive(<span style=color:#8be9fd>string</span> message, <span style=color:#8be9fd>string</span> role)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#ff79c6>if</span> (role != Role)
+</span></span><span style=display:flex><span>            {
+</span></span><span style=display:flex><span>                Console.WriteLine(<span style=color:#f1fa8c>$&#34;{Role} received &#39;{message}&#39; from {role}&#34;</span>);
+</span></span><span style=display:flex><span>            }
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>        <span style=color:#ff79c6>public</span> <span style=color:#ff79c6>void</span> Send(<span style=color:#8be9fd>string</span> message)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            Console.WriteLine(<span style=color:#f1fa8c>$&#34;{Role} sends:  {message}&#34;</span>);
+</span></span><span style=display:flex><span>            <span style=color:#bd93f9>_</span>mediator.Send(message, Role);
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    }
+</span></span></code></pre></div><p>最后在Program里新建对象进行测试：</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-csharp data-lang=csharp><span style=display:flex><span>    <span style=color:#ff79c6>class</span> <span style=color:#50fa7b>Program</span>
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#ff79c6>static</span> <span style=color:#ff79c6>void</span> Main(<span style=color:#8be9fd>string</span>[] args)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#8be9fd>var</span> mediator = <span style=color:#ff79c6>new</span> NotificationMediator();
+</span></span><span style=display:flex><span>            <span style=color:#8be9fd>var</span> admin = <span style=color:#ff79c6>new</span> Person(mediator, <span style=color:#f1fa8c>&#34;Admin&#34;</span>);
+</span></span><span style=display:flex><span>            <span style=color:#8be9fd>var</span> user = <span style=color:#ff79c6>new</span> Person(mediator, <span style=color:#f1fa8c>&#34;User&#34;</span>);
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>            admin.Send(<span style=color:#f1fa8c>&#34;Watch out!&#34;</span>);
+</span></span><span style=display:flex><span>            user.Send(<span style=color:#f1fa8c>&#34;I have Received&#34;</span>);
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    }
+</span></span></code></pre></div><p>得到以下结果：</p><p><img src=https://pic2.zhimg.com/v2-ce57fb7366a22a72f493ac15b7e343c1_b.png alt=https://pic2.zhimg.com/v2-ce57fb7366a22a72f493ac15b7e343c1_b.png></p><p>可以看出，两个Person对象，通过NotificationMediator中介者，实现了消息的发送与接收。因为目前只是一个类的两个对象进行通信，可能不是十分明显，但如果想要将Person进一步细化，将各个Role作为单独的类，或是想要扩展更多的同事类，那么使用中介者的好处就非常明显了。</p><h2 id=2-mediatr><strong>2. MediatR</strong></h2><p>根据上面对中介者模式的描述，MediatR在项目中的作用就很明显了：降低各个类之间的耦合。下面介绍在实际.NET Core WebAPI 中实用MediatR。</p><p>首先新建WebAPI项目，并安装MediatR和MediatR.Extensions.Microsoft.DependencyInjection两个Nuget Packages。</p><p><img src=https://pic3.zhimg.com/v2-0b818345c5cbe1ded4010c24bde6ca46_b.png alt=https://pic3.zhimg.com/v2-0b818345c5cbe1ded4010c24bde6ca46_b.png></p><p>在Startup类中，需要将对MediatR进行配置，使用刚才安装的DependencyInjection包中的方法AddMediatR，将MediatR及当前的程序集注入进去，这样MediatR就可以通过扫描当前程序集来获取相应的类。</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-csharp data-lang=csharp><span style=display:flex><span>       <span style=color:#ff79c6>public</span> <span style=color:#ff79c6>void</span> ConfigureServices(IServiceCollection services)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            services.AddMediatR(<span style=color:#ff79c6>typeof</span>(Startup));
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>            services.AddControllers();
+</span></span><span style=display:flex><span>        }
+</span></span></code></pre></div><p>如果你使用的是Autofac或其他IoC容器，请参阅MediatR Github Page 。</p><p>MediatR有两种消息传递的方式：</p><ul><li>Request/Response message，用于一个单独的Handler。</li><li>Notification message，用于多个Handler。</li></ul><h3 id=21-requestresponse><strong>2.1 Request/Response</strong></h3><p>在MediatR中，有两种类型的request：</p><ul><li><strong>IRequest</strong> ：返回一个T类型的值。</li><li><strong>IRequest</strong> ：不返回值。</li></ul><p>对于每个request类型，都有相应的handler接口：</p><ul><li><strong>IRequestHandler&lt;T, U></strong> ：实现该接口并返回 Task。</li><li><strong>RequestHandler&lt;T, U></strong> ：继承该类并返回 U。</li><li><strong>IRequestHandler</strong> ：实现该接口并返回 Task。关于Unit这个类，会在下篇中介绍(如果有的话)。</li><li><strong>AsyncRequestHandler</strong> ：继承该类并返回 Task。</li><li><strong>RequestHandler</strong> ：继承该类不返回。</li></ul><p>接下来，我们创建一个Controller及方法CreateOrder，接收CreateOrderCommand为参数。</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-csharp data-lang=csharp><span style=display:flex><span><span style=color:#50fa7b>    [ApiController]</span>
+</span></span><span style=display:flex><span><span style=color:#50fa7b>    [Route(&#34;/api/order&#34;)]</span>
+</span></span><span style=display:flex><span>    <span style=color:#ff79c6>public</span> <span style=color:#ff79c6>class</span> <span style=color:#50fa7b>OrderController</span> : ControllerBase
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#ff79c6>private</span> <span style=color:#ff79c6>readonly</span> IMediator <span style=color:#bd93f9>_</span>mediator;
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>        <span style=color:#ff79c6>public</span> OrderController(IMediator mediator)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#bd93f9>_</span>mediator = mediator;
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span><span style=color:#50fa7b>
+</span></span></span><span style=display:flex><span><span style=color:#50fa7b>        [HttpPost]</span>
+</span></span><span style=display:flex><span>        <span style=color:#ff79c6>public</span> <span style=color:#ff79c6>async</span> Task&lt;<span style=color:#8be9fd>string</span>&gt; CreateOrder([FromBody]CreateOrderCommand command)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#ff79c6>return</span> <span style=color:#ff79c6>await</span> <span style=color:#bd93f9>_</span>mediator.Send(command);
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>     }
+</span></span></code></pre></div><p>CreateOrderCommand内只有一个string类型的属性OrderName，同时该类implement IRequest接口。</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-csharp data-lang=csharp><span style=display:flex><span>    <span style=color:#ff79c6>public</span> <span style=color:#ff79c6>class</span> <span style=color:#50fa7b>CreateOrderCommand</span> : IRequest&lt;<span style=color:#8be9fd>string</span>&gt;
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#ff79c6>public</span> <span style=color:#8be9fd>string</span> OrderName { <span style=color:#ff79c6>get</span>; <span style=color:#ff79c6>set</span>; }
+</span></span><span style=display:flex><span>    }
+</span></span></code></pre></div><p>CreateOrderCommandHandler为对CreateOrder进行处理的类，实现IRequestHandler接口中的Handle方法。第一个泛型参数为CreateOrderCommand类，而第二个泛型参数则是Handle方法中返回的类型。</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-csharp data-lang=csharp><span style=display:flex><span>    <span style=color:#ff79c6>public</span> <span style=color:#ff79c6>class</span> <span style=color:#50fa7b>CreateOrderCommandHandle</span> : IRequestHandler&lt;CreateOrderCommand, <span style=color:#8be9fd>string</span>&gt;
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#ff79c6>public</span> Task&lt;<span style=color:#8be9fd>string</span>&gt; Handle(CreateOrderCommand request, CancellationToken cancellationToken)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#8be9fd>var</span> s = <span style=color:#f1fa8c>$&#34;CreateOrderCommandHandler: Create Order ${request.OrderName}&#34;</span>;
+</span></span><span style=display:flex><span>            <span style=color:#ff79c6>return</span> Task.FromResult(s);
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    }
+</span></span></code></pre></div><p>所有的准备完毕，启动项目，使用Postman发送Post请求，可以看出得到以下结果：</p><p><img src=https://pic4.zhimg.com/v2-5ba127aa3e93a732339e3ad7d136d067_b.png alt=https://pic4.zhimg.com/v2-5ba127aa3e93a732339e3ad7d136d067_b.png></p><p>之前有说到，IRequest是用来对单个Handler进行处理的，那么如果同时有多个实现了同一种IRequestHandler的Handler会怎么样呢？我们在原方法上面，duplicate一个Handler：</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-csharp data-lang=csharp><span style=display:flex><span>    <span style=color:#ff79c6>public</span> <span style=color:#ff79c6>class</span> <span style=color:#50fa7b>CreateOrderCommandHandleSecond</span> : IRequestHandler&lt;CreateOrderCommand, <span style=color:#8be9fd>string</span>&gt;
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#ff79c6>public</span> Task&lt;<span style=color:#8be9fd>string</span>&gt; Handle(CreateOrderCommand request, CancellationToken cancellationToken)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#8be9fd>var</span> s = <span style=color:#f1fa8c>$&#34;CreateOrderCommandHandlerSecond: Create Order ${request.OrderName}&#34;</span>;
+</span></span><span style=display:flex><span>            <span style=color:#ff79c6>return</span> Task.FromResult(s);
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    <span style=color:#ff79c6>public</span> <span style=color:#ff79c6>class</span> <span style=color:#50fa7b>CreateOrderCommandHandle</span> : IRequestHandler&lt;CreateOrderCommand, <span style=color:#8be9fd>string</span>&gt;
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#ff79c6>public</span> Task&lt;<span style=color:#8be9fd>string</span>&gt; Handle(CreateOrderCommand request, CancellationToken cancellationToken)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#8be9fd>var</span> s = <span style=color:#f1fa8c>$&#34;CreateOrderCommandHandler: Create Order ${request.OrderName}&#34;</span>;
+</span></span><span style=display:flex><span>            <span style=color:#ff79c6>return</span> Task.FromResult(s);
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    }
+</span></span></code></pre></div><p>这次我们再进行测试，可以看到是由Second进行handle的，所以为了避免不必要的错误与误解，尽量仅注册需要的Handler。</p><p><img src=https://pic4.zhimg.com/v2-06ee55605f2d5bc2ce03908b9ba65d83_b.png alt=https://pic4.zhimg.com/v2-06ee55605f2d5bc2ce03908b9ba65d83_b.png></p><h3 id=22-notifications><strong>2.2 Notifications</strong></h3><p>根据Request中的基础，先建一个implement INotification的类：</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-csharp data-lang=csharp><span style=display:flex><span>    <span style=color:#ff79c6>public</span> <span style=color:#ff79c6>class</span> <span style=color:#50fa7b>QueryOrder</span> : INotification {}
+</span></span></code></pre></div><p>新建三个实现INotification的Handler：</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-csharp data-lang=csharp><span style=display:flex><span>    <span style=color:#ff79c6>public</span> <span style=color:#ff79c6>class</span> <span style=color:#50fa7b>QueryOrderHandler</span> : INotificationHandler&lt;QueryOrder&gt;
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#ff79c6>public</span> Task Handle(QueryOrder notification, CancellationToken cancellationToken)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            Console.WriteLine(<span style=color:#f1fa8c>$&#34;Query 1st time&#34;</span>);
+</span></span><span style=display:flex><span>            <span style=color:#ff79c6>return</span> Task.CompletedTask;
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    <span style=color:#ff79c6>public</span> <span style=color:#ff79c6>class</span> <span style=color:#50fa7b>QueryOrderHandlerSecond</span> : INotificationHandler&lt;QueryOrder&gt;
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#ff79c6>public</span> Task Handle(QueryOrder notification, CancellationToken cancellationToken)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            Console.WriteLine(<span style=color:#f1fa8c>$&#34;Query 2nd time&#34;</span>);
+</span></span><span style=display:flex><span>            <span style=color:#ff79c6>return</span> Task.CompletedTask;
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    <span style=color:#ff79c6>public</span> <span style=color:#ff79c6>class</span> <span style=color:#50fa7b>QueryOrderHandlerThird</span> : INotificationHandler&lt;QueryOrder&gt;
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#ff79c6>public</span> Task Handle(QueryOrder notification, CancellationToken cancellationToken)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            Console.WriteLine(<span style=color:#f1fa8c>$&#34;Query 3rd time&#34;</span>);
+</span></span><span style=display:flex><span>            <span style=color:#ff79c6>return</span> Task.CompletedTask;
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    }
+</span></span></code></pre></div><p>在Controller中，写一个方法调用mediator实现Query操作，在Notification中，使用的是Publish方法而非Send：</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-csharp data-lang=csharp><span style=display:flex><span><span style=color:#50fa7b>        [HttpGet]</span>
+</span></span><span style=display:flex><span>        <span style=color:#ff79c6>public</span> <span style=color:#ff79c6>async</span> Task QueryOrder()
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>             <span style=color:#ff79c6>await</span> <span style=color:#bd93f9>_</span>mediator.Publish(<span style=color:#ff79c6>new</span> QueryOrder());
+</span></span><span style=display:flex><span>        }
+</span></span></code></pre></div><p>运行项目，发送Get请求，得到以下结果：</p><p><img src=https://pic1.zhimg.com/v2-5133f24a5a047b5d8f8cc178f6ffe83c_b.png alt=https://pic1.zhimg.com/v2-5133f24a5a047b5d8f8cc178f6ffe83c_b.png></p><h3 id=23-request与notification><strong>2.3 Request与Notification</strong></h3><p>通过以上实现与测试，可以总结出两者的一些不同：</p><ul><li>Request 可以由使用者来决定是否需要选择有返回值的类型，而Notification 统一没有返回值。</li><li>Request 最好用于没有其他相同泛型列表的Handler，而Notification可以用任意的Handler，并且在Handler中可以实现不同的逻辑。</li><li>两者在行为模式上有所区别，Request为Send，可以理解为单播；Notification为Publish，可以理解为广播。</li></ul><h2 id=3-总结><strong>3. 总结</strong></h2><p>在本文中，首先介绍了中介模式及其C#实现，接着介绍了MediatR及如何在Web API项目中使用Request/Notification 发送消息。限于篇幅，本文只在Web API中使用了MediatR，但MediatR的应用场景却十分广泛。</p><hr><ul class=pager><li class=next><a href=/tech/%E5%9C%A8ASP.NET-Core%E4%B8%AD%E5%BA%94%E7%94%A8JWT/ data-toggle=tooltip data-placement=top title="在ASP.NET Core中应用JWT">Next
+Post &rarr;</a></li></ul></div><div class="col-lg-2 col-lg-offset-0
+visible-lg-block
+sidebar-container
+catalog-container"><div class=side-catalog><hr class="hidden-sm hidden-xs"><h5><a class=catalog-toggle href=#>CATALOG</a></h5><ul class=catalog-body></ul></div></div><div class="col-lg-8 col-lg-offset-2
+col-md-10 col-md-offset-1
+sidebar-container"><section><hr class="hidden-sm hidden-xs"><h5><a href=/tags/>FEATURED TAGS</a></h5><div class=tags><a href=/tags/.net title=.net>.net</a>
+<a href=/tags/asp.net title=asp.net>asp.net</a></div></section><section><hr><h5>FRIENDS</h5><ul class=list-inline><li><a target=_blank href></a></li></ul></section></div></div></div></article><footer><div class=container><div class=row><div class="col-lg-8 col-lg-offset-2 col-md-10 col-md-offset-1"><ul class="list-inline text-center"><li><a href=mailto:dukesaika@gmail.com><span class="fa-stack fa-lg"><i class="fas fa-circle fa-stack-2x"></i>
+<i class="fas fa-envelope fa-stack-1x fa-inverse"></i></span></a></li><li><a target=_blank href=https://github.com/dukezys><span class="fa-stack fa-lg"><i class="fas fa-circle fa-stack-2x"></i>
+<i class="fab fa-github fa-stack-1x fa-inverse"></i></span></a></li><li><a target=_blank href=https://www.linkedin.com/in/yinsong-zhao-6957901a9><span class="fa-stack fa-lg"><i class="fas fa-circle fa-stack-2x"></i>
+<i class="fab fa-linkedin fa-stack-1x fa-inverse"></i></span></a></li></ul><p class="copyright text-muted">Copyright &copy; 2022 Ganymede<br>Powered by <a href=https://gohugo.io/>Hugo</a>,
+Theme originated from
+<a href=https://themes.gohugo.io/hugo-theme-cleanwhite>CleanWhite Hugo Theme</a></p></div></div></div></footer><script>function loadAsync(i,t){var n=document,s="script",e=n.createElement(s),o=n.getElementsByTagName(s)[0];e.src=i,t&&e.addEventListener("load",function(e){t(null,e)},!1),o.parentNode.insertBefore(e,o)}</script><script>$("#tag_cloud").length!==0&&loadAsync("/js/jquery.tagcloud.js",function(){$.fn.tagcloud.defaults={color:{start:"#bbbbee",end:"#0085a1"}},$("#tag_cloud a").tagcloud()})</script><script>loadAsync("https://cdnjs.cloudflare.com/ajax/libs/fastclick/1.0.6/fastclick.js",function(){var e=document.querySelector("nav");e&&FastClick.attach(e)})</script><script type=text/javascript>function generateCatalog(e){_containerSelector="div.post-container";var t,n,s,o,i,r=$(_containerSelector),a=r.find("h1,h2,h3,h4,h5,h6");return $(e).html(''),a.each(function(){n=$(this).prop("tagName").toLowerCase(),i="#"+$(this).prop("id"),s=$(this).text(),t=$('<a href="'+i+'" rel="nofollow">'+s+"</a>"),o=$('<li class="'+n+'_nav"></li>').append(t),$(e).append(o)}),!0}generateCatalog(".catalog-body"),$(".catalog-toggle").click(function(e){e.preventDefault(),$(".side-catalog").toggleClass("fold")}),loadAsync("/js/jquery.nav.js",function(){$(".catalog-body").onePageNav({currentClass:"active",changeHash:!1,easing:"swing",filter:"",scrollSpeed:700,scrollOffset:0,scrollThreshold:.2,begin:null,end:null,scrollChange:null,padding:80})})</script></body></html>

@@ -1,0 +1,319 @@
+<!doctype html><html lang=en-us><head><meta charset=utf-8><meta http-equiv=x-ua-compatible content="IE=edge"><meta name=viewport content="width=device-width,initial-scale=1"><meta property="og:site_name" content="Ganymede"><meta property="og:type" content="article"><meta property="og:image" content="https://dukezys.github.io/img/02s.jpg"><meta property="twitter:image" content="https://dukezys.github.io/img/02s.jpg"><meta name=title content="MIT 6.824 Lab 1"><meta property="og:title" content="MIT 6.824 Lab 1"><meta property="twitter:title" content="MIT 6.824 Lab 1"><meta name=description content="MIT 6.824 Lab 1 MapReduce的实验记录"><meta property="og:description" content="MIT 6.824 Lab 1 MapReduce的实验记录"><meta property="twitter:description" content="MIT 6.824 Lab 1 MapReduce的实验记录"><meta property="twitter:card" content="summary"><meta name=keyword content="Duke, DukeSaika, Ganymede-, Ganymede, Blog, Duke的博客, 博客, 个人网站, 互联网, Web, .NET, Go, 分布式, Kubernetes, 微服务, Microservice"><link rel="shortcut icon" href=/img/favicon.ico><title>MIT 6.824 Lab 1-Duke's Blog</title><link rel=canonical href=/tech/MIT-6.824-Lab-1/><link rel=stylesheet href=/css/iDisqus.min.css><link rel=stylesheet href=/css/bootstrap.min.css><link rel=stylesheet href=/css/hugo-theme-cleanwhite.min.css><link rel=stylesheet href=/css/zanshang.css><link href=//cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.1/css/all.min.css rel=stylesheet type=text/css><script src=/js/jquery.min.js></script>
+<script src=/js/bootstrap.min.js></script>
+<script src=/js/hux-blog.min.js></script></head><nav class="navbar navbar-default navbar-custom navbar-fixed-top"><div class=container-fluid><div class="navbar-header page-scroll"><button type=button class=navbar-toggle>
+<span class=sr-only>Toggle navigation</span>
+<span class=icon-bar></span>
+<span class=icon-bar></span>
+<span class=icon-bar></span></button>
+<a class=navbar-brand href=/ style=color:#000>Ganymede</a></div><div id=huxblog_navbar><div class=navbar-collapse><ul class="nav navbar-nav navbar-right"><li><a href=/ style=color:#000>Home</a></li><li><a href=/categories/tech style=color:#000>tech</a></li><li><a href=/top/books/ style=color:#000>BOOKS</a></li><li><a href=/top/about/ style=color:#000>ABOUT</a></li><li><a href=/search style=color:#000><i class="fa fa-search"></i></a></li></ul></div></div></div></nav><script>var $body=document.body,$toggle=document.querySelector(".navbar-toggle"),$navbar=document.querySelector("#huxblog_navbar"),$collapse=document.querySelector(".navbar-collapse");$toggle.addEventListener("click",handleMagic);function handleMagic(){$navbar.className.indexOf("in")>0?($navbar.className=" ",setTimeout(function(){$navbar.className.indexOf("in")<0&&($collapse.style.height="0px")},400)):($collapse.style.height="auto",$navbar.className+=" in")}</script><style type=text/css>header.intro-header{background-image:url(/img/02s.jpg)}</style><header class=intro-header><div class=container><div class=row><div class="col-lg-8 col-lg-offset-2 col-md-10 col-md-offset-1"><div class=post-heading><div class=tags><a class=tag href=/tags/distributed-system title="Distributed System">Distributed System</a>
+<a class=tag href=/tags/go title=Go>Go</a></div><h1>MIT 6.824 Lab 1</h1><h2 class=subheading></h2><span class=meta>Posted by
+ Duke
+on
+Saturday, January 22, 2022</span></div></div></div></div></header><article><div class=container><div class=row><div class="col-lg-8 col-lg-offset-2
+col-md-10 col-md-offset-1
+post-container"><h1 id=mit-6824-lab-1>MIT 6.824 Lab 1</h1><p>本文代码：<a href=https://github.com/dukezys/MIT-6.824-2021-Spring>https://github.com/dukezys/MIT-6.824-2021-Spring</a></p><p>Lab 1页面：<a href=https://pdos.csail.mit.edu/6.824/labs/lab-mr.html>https://pdos.csail.mit.edu/6.824/labs/lab-mr.html</a></p><p>MapReduce论文：<a href=https://pdos.csail.mit.edu/6.824/papers/mapreduce.pdf>https://pdos.csail.mit.edu/6.824/papers/mapreduce.pdf</a></p><h2 id=目的>目的</h2><p>在实验中，我们需要实现下图中Master与Worker两种角色，并完成整个MapReduce运行流程的编写。</p><ul><li>流程中只有一个Master进程，以及一个或多个并行执行的Worker进程。</li><li>Worker主动向Master发起RPC请求进行通信。</li><li>每个Worker都会向协调器请求一项任务，从一个或多个文件中读取任务的输入，执行任务，并将任务的输出写入一个或多个文件。</li></ul><p><img src=/img/220122MITLab1/str.jpg alt=test></p><h2 id=设计>设计</h2><p>Map和Reduce已经在wc.go 中实现了，我们的目的是通过完成mr文件下面的worker.go, entities.go 和 coordinator.go 来实现上图的流程。</p><h3 id=coordinatorgo>coordinator.go</h3><p>在coordinator.go中需要实现：</p><ol><li>一个完整的 Coordinator struct</li><li>一个分配Task (Map & Reduce) 的RPC Handler</li><li>一个接受Task完成消息的RPC Handler</li><li>一个检测Task是否超时的方法 — 在实验中是10s</li><li>一个判断整个流程是否已经结束的方法，原来的代码中已经给出了一部分 — Done()方法</li></ol><p>关于Task集合的数据结构，我使用了 container/list 来实现，对于Map和Reduce Task，分别实现了一个Waiting Queue和Running Queue，主要流程如下：</p><ol><li>程序初始化时，初始化mapTaskWaitingQ，一个.txt文件对应一个map task。</li><li>在分配map task时，将task从mapTaskWaitingQ移除并放到mapTaskRunningQ中。</li><li>如果task完成，将task在mapTaskRunningQ中移除。</li><li>如果task超时，将task从mapTaskRunningQ移除并重新放到mapTaskWaitingQ中。</li></ol><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#8be9fd;font-style:italic>type</span> Coordinator <span style=color:#8be9fd;font-style:italic>struct</span> {
+</span></span><span style=display:flex><span>	<span style=color:#6272a4>// Your definitions here.
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>	fileList []<span style=color:#8be9fd>string</span>
+</span></span><span style=display:flex><span>	reducer  <span style=color:#8be9fd>int</span>
+</span></span><span style=display:flex><span>	finished <span style=color:#8be9fd>bool</span>
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>  mapTaskWaitingQ list.List
+</span></span><span style=display:flex><span>	mapTaskRunningQ list.List
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>	reduceTaskWaitingQ list.List
+</span></span><span style=display:flex><span>	reduceTaskRunningQ list.List
+</span></span><span style=display:flex><span>	<span style=color:#6272a4>//result of map task
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>	interFiles <span style=color:#8be9fd;font-style:italic>map</span>[<span style=color:#8be9fd>string</span>]<span style=color:#8be9fd>bool</span>
+</span></span><span style=display:flex><span>	<span style=color:#6272a4>//result of reduce task
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>	finalResult []<span style=color:#8be9fd>string</span>
+</span></span><span style=display:flex><span>	reducestart <span style=color:#8be9fd>bool</span>
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><h3 id=workergo>worker.go</h3><p>在worker.go中需要实现：</p><ol><li>一个完整的请求Task的RPC caller — 完成给出的 CallTaskHandler 函数</li><li>一个通知Task完成的RPC caller</li><li>处理Map Task和Reduce Task的函数</li></ol><h3 id=rpcgo>rpc.go</h3><p>这里主要定义了RPC消息传递的结构体：</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#8be9fd;font-style:italic>type</span> TaskArgs <span style=color:#8be9fd;font-style:italic>struct</span> {
+</span></span><span style=display:flex><span>	TaskStatus TaskStatus
+</span></span><span style=display:flex><span>}
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span><span style=color:#8be9fd;font-style:italic>type</span> TaskReply <span style=color:#8be9fd;font-style:italic>struct</span> {
+</span></span><span style=display:flex><span>	TaskStatus TaskStatus
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><p>TaskStatus的定义如下：</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#8be9fd;font-style:italic>type</span> TaskStatus <span style=color:#8be9fd;font-style:italic>struct</span> {
+</span></span><span style=display:flex><span>	Task      Task
+</span></span><span style=display:flex><span>	State     <span style=color:#8be9fd>int</span>
+</span></span><span style=display:flex><span>	BeginTime time.Time
+</span></span><span style=display:flex><span>}
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span><span style=color:#8be9fd;font-style:italic>func</span> (ts <span style=color:#ff79c6>*</span>TaskStatus) <span style=color:#50fa7b>StartTask</span>() {
+</span></span><span style=display:flex><span>	ts.BeginTime = time.<span style=color:#50fa7b>Now</span>()
+</span></span><span style=display:flex><span>	ts.State = RUNNING
+</span></span><span style=display:flex><span>}
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span><span style=color:#8be9fd;font-style:italic>func</span> (ts <span style=color:#ff79c6>*</span>TaskStatus) <span style=color:#50fa7b>OverTime</span>() <span style=color:#8be9fd>bool</span> {
+</span></span><span style=display:flex><span>	<span style=color:#ff79c6>return</span> time.<span style=color:#50fa7b>Now</span>().<span style=color:#50fa7b>Sub</span>(ts.BeginTime) &gt; time.Second<span style=color:#ff79c6>*</span><span style=color:#bd93f9>10</span>
+</span></span><span style=display:flex><span>}
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span><span style=color:#8be9fd;font-style:italic>const</span> (
+</span></span><span style=display:flex><span>	RUNNING  = <span style=color:#bd93f9>1</span>
+</span></span><span style=display:flex><span>	FINISHED = <span style=color:#bd93f9>2</span>
+</span></span><span style=display:flex><span>	WAITING  = <span style=color:#bd93f9>3</span>
+</span></span><span style=display:flex><span>)
+</span></span></code></pre></div><p>StartTask()和 OverTime()方法用来记录任务开始时间并判断是否超时，State 用于判断整个队列的运行情况，例如，WAITING会发生在所有Map Task已经分配出去了但还有些未完成的情况下。</p><p>Task的定义如下，Map和Reduce都是一样的：</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#8be9fd;font-style:italic>type</span> Task <span style=color:#8be9fd;font-style:italic>struct</span> {
+</span></span><span style=display:flex><span>	TaskId   <span style=color:#8be9fd>int</span>
+</span></span><span style=display:flex><span>	TaskType <span style=color:#8be9fd>string</span>
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>	Filename []<span style=color:#8be9fd>string</span>
+</span></span><span style=display:flex><span>	Result   <span style=color:#8be9fd;font-style:italic>map</span>[<span style=color:#8be9fd>string</span>]<span style=color:#8be9fd>bool</span>
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>	Reducer   <span style=color:#8be9fd>int</span>
+</span></span><span style=display:flex><span>	Completed <span style=color:#8be9fd>bool</span>
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><p>TaskStatus通过包装了一层用于标识一个Task正在运行状态，而Task则是所要执行任务的本身，如果用泛型说的话就是 mapTaskWaitingQ，mapTaskRunningQ。</p><blockquote><p>在代码里，我将所有结构体定义都放到了一个单独的entities.go文件中。</p></blockquote><h2 id=实现>实现</h2><p>根据以上设计，就可以很容易的对其按照要求进行实现。</p><h3 id=coordinatorgo-1>coordinator.go</h3><p>考虑到并发的情况，在队列操作相关的方法中需要使用sync.Mutex，然后可以梳理一下顺序：</p><ol><li>初始化coordinator，同时初始化mapTaskWaitingQ，启动后台检测超时线程（加锁）</li></ol><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#8be9fd;font-style:italic>func</span> <span style=color:#50fa7b>MakeCoordinator</span>(files []<span style=color:#8be9fd>string</span>, nReduce <span style=color:#8be9fd>int</span>) <span style=color:#ff79c6>*</span>Coordinator {
+</span></span><span style=display:flex><span>	c <span style=color:#ff79c6>:=</span> Coordinator{}
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>	<span style=color:#6272a4>//generate Coordinator
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>	c.fileList = files
+</span></span><span style=display:flex><span>	c.reducer = nReduce
+</span></span><span style=display:flex><span>	c.reducestart = <span style=color:#ff79c6>false</span>
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>	<span style=color:#6272a4>//初始化mapTaskWaitingQ，在这里是一个文件一个task
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>	i <span style=color:#ff79c6>:=</span> <span style=color:#bd93f9>1</span>
+</span></span><span style=display:flex><span>	<span style=color:#ff79c6>for</span> _, path <span style=color:#ff79c6>:=</span> <span style=color:#ff79c6>range</span> files {
+</span></span><span style=display:flex><span>		c.mapTaskWaitingQ.<span style=color:#50fa7b>PushBack</span>(Task{
+</span></span><span style=display:flex><span>			TaskId:    i,
+</span></span><span style=display:flex><span>			TaskType:  <span style=color:#f1fa8c>&#34;map&#34;</span>,
+</span></span><span style=display:flex><span>			Reducer:   c.reducer,
+</span></span><span style=display:flex><span>			Filename:  []<span style=color:#8be9fd>string</span>{path},
+</span></span><span style=display:flex><span>			Completed: <span style=color:#ff79c6>false</span>,
+</span></span><span style=display:flex><span>			Result:    <span style=color:#8be9fd;font-style:italic>map</span>[<span style=color:#8be9fd>string</span>]<span style=color:#8be9fd>bool</span>{},
+</span></span><span style=display:flex><span>		})
+</span></span><span style=display:flex><span>		i<span style=color:#ff79c6>++</span>
+</span></span><span style=display:flex><span>	}
+</span></span><span style=display:flex><span>	c.interFiles = <span style=color:#8be9fd;font-style:italic>map</span>[<span style=color:#8be9fd>string</span>]<span style=color:#8be9fd>bool</span>{}
+</span></span><span style=display:flex><span>	<span style=color:#6272a4>//启动后台超时检测线程
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>	<span style=color:#ff79c6>go</span> c.<span style=color:#50fa7b>timeController</span>()
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>	c.<span style=color:#50fa7b>server</span>()
+</span></span><span style=display:flex><span>	<span style=color:#ff79c6>return</span> <span style=color:#ff79c6>&amp;</span>c
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><ol start=2><li>分配Task的Handler（加锁），主要逻辑是：<ul><li>先分配map task</li><li>如果所有map task都完成，初始化reduceTaskWaitingQ</li><li>开始运行reduce task</li><li>reduce task都完成，设置flag c.finished 为 true，结束进程</li></ul></li></ol><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#8be9fd;font-style:italic>func</span> (c <span style=color:#ff79c6>*</span>Coordinator) <span style=color:#50fa7b>AllocateTask</span>(args TaskArgs, reply <span style=color:#ff79c6>*</span>TaskReply) <span style=color:#8be9fd>error</span> {
+</span></span><span style=display:flex><span>	mutex.<span style=color:#50fa7b>Lock</span>()
+</span></span><span style=display:flex><span>	<span style=color:#ff79c6>defer</span> mutex.<span style=color:#50fa7b>Unlock</span>()
+</span></span><span style=display:flex><span>	<span style=color:#6272a4>//分配Map Task，从队列前端开始分配
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>	mapWaitingFirst <span style=color:#ff79c6>:=</span> c.mapTaskWaitingQ.<span style=color:#50fa7b>Front</span>()
+</span></span><span style=display:flex><span>	<span style=color:#ff79c6>if</span> mapWaitingFirst <span style=color:#ff79c6>!=</span> <span style=color:#ff79c6>nil</span> {
+</span></span><span style=display:flex><span>		fmt.<span style=color:#50fa7b>Printf</span>(<span style=color:#f1fa8c>&#34;COORDINATOR: remove map task %v from waiting queue\n&#34;</span>, mapWaitingFirst.Value.(Task).TaskId)
+</span></span><span style=display:flex><span>		c.mapTaskWaitingQ.<span style=color:#50fa7b>Remove</span>(c.mapTaskWaitingQ.<span style=color:#50fa7b>Front</span>())
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>		task <span style=color:#ff79c6>:=</span> mapWaitingFirst.Value.(Task)
+</span></span><span style=display:flex><span>		ts <span style=color:#ff79c6>:=</span> TaskStatus{Task: task}
+</span></span><span style=display:flex><span>		ts.<span style=color:#50fa7b>StartTask</span>()
+</span></span><span style=display:flex><span>		c.mapTaskRunningQ.<span style=color:#50fa7b>PushBack</span>(ts)
+</span></span><span style=display:flex><span>		reply.TaskStatus = ts
+</span></span><span style=display:flex><span>		<span style=color:#ff79c6>return</span> <span style=color:#ff79c6>nil</span>
+</span></span><span style=display:flex><span>	}
+</span></span><span style=display:flex><span>	<span style=color:#6272a4>//判断有没有正在进行/在等待的map task，没有的话就开始reduce
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>	<span style=color:#ff79c6>if</span> c.mapTaskRunningQ.<span style=color:#50fa7b>Len</span>() <span style=color:#ff79c6>!=</span> <span style=color:#bd93f9>0</span> <span style=color:#ff79c6>||</span> c.mapTaskWaitingQ.<span style=color:#50fa7b>Len</span>() <span style=color:#ff79c6>!=</span> <span style=color:#bd93f9>0</span> {
+</span></span><span style=display:flex><span>		reply.TaskStatus.State = WAITING
+</span></span><span style=display:flex><span>		<span style=color:#ff79c6>return</span> <span style=color:#ff79c6>nil</span>
+</span></span><span style=display:flex><span>	}
+</span></span><span style=display:flex><span>	<span style=color:#6272a4>//初始化reduceTaskWaitingQ
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>	<span style=color:#ff79c6>if</span> !c.reducestart {
+</span></span><span style=display:flex><span>			<span style=color:#ff79c6>for</span> n <span style=color:#ff79c6>:=</span> <span style=color:#bd93f9>0</span>; n &lt; c.reducer; n<span style=color:#ff79c6>++</span> {
+</span></span><span style=display:flex><span>				<span style=color:#8be9fd;font-style:italic>var</span> rf []<span style=color:#8be9fd>string</span>
+</span></span><span style=display:flex><span>				<span style=color:#ff79c6>for</span> k, _ <span style=color:#ff79c6>:=</span> <span style=color:#ff79c6>range</span> c.interFiles {
+</span></span><span style=display:flex><span>					sa <span style=color:#ff79c6>:=</span> strings.<span style=color:#50fa7b>Split</span>(k, <span style=color:#f1fa8c>&#34;-&#34;</span>)
+</span></span><span style=display:flex><span>					sr <span style=color:#ff79c6>:=</span> []<span style=color:#8be9fd;font-style:italic>rune</span>(sa[<span style=color:#8be9fd;font-style:italic>len</span>(sa)<span style=color:#ff79c6>-</span><span style=color:#bd93f9>1</span>])[<span style=color:#bd93f9>0</span>]
+</span></span><span style=display:flex><span>					<span style=color:#ff79c6>if</span> (<span style=color:#8be9fd;font-style:italic>int</span>(sr) <span style=color:#ff79c6>-</span> <span style=color:#f1fa8c>&#39;0&#39;</span>) <span style=color:#ff79c6>==</span> n {
+</span></span><span style=display:flex><span>						rf = <span style=color:#8be9fd;font-style:italic>append</span>(rf, k)
+</span></span><span style=display:flex><span>					}
+</span></span><span style=display:flex><span>				}
+</span></span><span style=display:flex><span>				c.reduceTaskWaitingQ.<span style=color:#50fa7b>PushBack</span>(Task{TaskId: n, TaskType: <span style=color:#f1fa8c>&#34;reduce&#34;</span>, Filename: rf, Completed: <span style=color:#ff79c6>false</span>, Result: <span style=color:#8be9fd;font-style:italic>map</span>[<span style=color:#8be9fd>string</span>]<span style=color:#8be9fd>bool</span>{}})
+</span></span><span style=display:flex><span>			}
+</span></span><span style=display:flex><span>			c.reducestart = <span style=color:#ff79c6>true</span>
+</span></span><span style=display:flex><span>		}
+</span></span><span style=display:flex><span>	<span style=color:#6272a4>//分配reduce task，跟分配map task是一样的
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>	reduceWaitingFirst <span style=color:#ff79c6>:=</span> c.reduceTaskWaitingQ.<span style=color:#50fa7b>Front</span>()
+</span></span><span style=display:flex><span>	<span style=color:#ff79c6>if</span> reduceWaitingFirst <span style=color:#ff79c6>!=</span> <span style=color:#ff79c6>nil</span> {
+</span></span><span style=display:flex><span>		<span style=color:#ff79c6>......</span>
+</span></span><span style=display:flex><span>	}
+</span></span><span style=display:flex><span>	<span style=color:#6272a4>//判断是否都运行完毕
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>	<span style=color:#ff79c6>if</span> c.mapTaskRunningQ.<span style=color:#50fa7b>Len</span>() &gt; <span style=color:#bd93f9>0</span> <span style=color:#ff79c6>||</span> c.reduceTaskRunningQ.<span style=color:#50fa7b>Len</span>() &gt; <span style=color:#bd93f9>0</span> {
+</span></span><span style=display:flex><span>		reply.TaskStatus.State = WAITING
+</span></span><span style=display:flex><span>		<span style=color:#ff79c6>return</span> <span style=color:#ff79c6>nil</span>
+</span></span><span style=display:flex><span>	}
+</span></span><span style=display:flex><span>	reply.TaskStatus.State = FINISHED
+</span></span><span style=display:flex><span>	c.finished = <span style=color:#ff79c6>true</span>
+</span></span><span style=display:flex><span>	<span style=color:#ff79c6>return</span> <span style=color:#ff79c6>nil</span>
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><ol start=3><li>接受Task完成消息的RPC Handler（加锁）：<ul><li>收到task完成的消息，判断是map task还是reduce task</li><li>如果是map/reduce，则将其从对应的running queue中移除</li></ul></li></ol><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#8be9fd;font-style:italic>func</span> (c <span style=color:#ff79c6>*</span>Coordinator) <span style=color:#50fa7b>TaskCompleteHandler</span>(taskArgs <span style=color:#ff79c6>*</span>TaskArgs, taskReply <span style=color:#ff79c6>*</span>TaskReply) <span style=color:#8be9fd>error</span> {
+</span></span><span style=display:flex><span>	mutex.<span style=color:#50fa7b>Lock</span>()
+</span></span><span style=display:flex><span>	<span style=color:#ff79c6>defer</span> mutex.<span style=color:#50fa7b>Unlock</span>()
+</span></span><span style=display:flex><span>	task <span style=color:#ff79c6>:=</span> taskArgs.TaskStatus.Task
+</span></span><span style=display:flex><span>	<span style=color:#6272a4>//map
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>	<span style=color:#ff79c6>if</span> task.TaskType <span style=color:#ff79c6>==</span> <span style=color:#f1fa8c>&#34;map&#34;</span> {
+</span></span><span style=display:flex><span>		<span style=color:#ff79c6>if</span> task.Completed {
+</span></span><span style=display:flex><span>			<span style=color:#6272a4>//将产生的中间文件告知coordinator
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>			<span style=color:#ff79c6>for</span> k, _ <span style=color:#ff79c6>:=</span> <span style=color:#ff79c6>range</span> task.Result {
+</span></span><span style=display:flex><span>				c.interFiles[k] = <span style=color:#ff79c6>true</span>
+</span></span><span style=display:flex><span>			}
+</span></span><span style=display:flex><span>			<span style=color:#6272a4>//从running队列中删除当前task
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>			<span style=color:#8be9fd;font-style:italic>var</span> ele <span style=color:#ff79c6>*</span>list.Element
+</span></span><span style=display:flex><span>			<span style=color:#ff79c6>for</span> ele = c.mapTaskRunningQ.<span style=color:#50fa7b>Front</span>(); ele <span style=color:#ff79c6>!=</span> <span style=color:#ff79c6>nil</span> <span style=color:#ff79c6>&amp;&amp;</span> ele.Value.(TaskStatus).Task.TaskId <span style=color:#ff79c6>!=</span> task.TaskId; ele = ele.<span style=color:#50fa7b>Next</span>() {
+</span></span><span style=display:flex><span>			}
+</span></span><span style=display:flex><span>			<span style=color:#ff79c6>if</span> ele <span style=color:#ff79c6>!=</span> <span style=color:#ff79c6>nil</span> {
+</span></span><span style=display:flex><span>				c.mapTaskRunningQ.<span style=color:#50fa7b>Remove</span>(ele)
+</span></span><span style=display:flex><span>			}
+</span></span><span style=display:flex><span>		}
+</span></span><span style=display:flex><span>		<span style=color:#ff79c6>return</span> <span style=color:#ff79c6>nil</span>
+</span></span><span style=display:flex><span>	}
+</span></span><span style=display:flex><span>	<span style=color:#6272a4>//reduce的操作跟map大概是一样的，不过不需要加interfiles
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>  <span style=color:#ff79c6>......</span>
+</span></span><span style=display:flex><span>	<span style=color:#ff79c6>return</span> <span style=color:#ff79c6>nil</span>
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><ol start=4><li>判断Task超时的方法：<ul><li>定时循环（10s）map/reduce running queue，看是否有超时的任务（直接调用TaskStatus.OverTime）</li><li>如果有，将其从running queue中移除，将TaskStatus里的Task加入到对应的waiting queue中</li></ul></li></ol><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#8be9fd;font-style:italic>func</span> (c <span style=color:#ff79c6>*</span>Coordinator) <span style=color:#50fa7b>timeController</span>() {
+</span></span><span style=display:flex><span>	<span style=color:#ff79c6>for</span> {
+</span></span><span style=display:flex><span>		<span style=color:#6272a4>//要在for里面再lock，不然会死锁
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>		mutex.<span style=color:#50fa7b>Lock</span>() 
+</span></span><span style=display:flex><span>		<span style=color:#6272a4>//分别判断mapTaskRunningQ和reduceTaskRunningQ里的超时TaskStatus
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>		mOverTime <span style=color:#ff79c6>:=</span> c.<span style=color:#50fa7b>getTimeOutTasks</span>(<span style=color:#ff79c6>&amp;</span>c.mapTaskRunningQ)
+</span></span><span style=display:flex><span>		<span style=color:#ff79c6>if</span> <span style=color:#8be9fd;font-style:italic>len</span>(mOverTime) &gt; <span style=color:#bd93f9>0</span> {
+</span></span><span style=display:flex><span>			<span style=color:#ff79c6>for</span> _, v <span style=color:#ff79c6>:=</span> <span style=color:#ff79c6>range</span> mOverTime {
+</span></span><span style=display:flex><span>				c.mapTaskWaitingQ.<span style=color:#50fa7b>PushBack</span>(v)
+</span></span><span style=display:flex><span>			}
+</span></span><span style=display:flex><span>		}
+</span></span><span style=display:flex><span>		rOverTime <span style=color:#ff79c6>:=</span> c.<span style=color:#50fa7b>getTimeOutTasks</span>(<span style=color:#ff79c6>&amp;</span>c.reduceTaskRunningQ)
+</span></span><span style=display:flex><span>		<span style=color:#ff79c6>if</span> <span style=color:#8be9fd;font-style:italic>len</span>(rOverTime) &gt; <span style=color:#bd93f9>0</span> {
+</span></span><span style=display:flex><span>			<span style=color:#ff79c6>for</span> _, v <span style=color:#ff79c6>:=</span> <span style=color:#ff79c6>range</span> rOverTime {
+</span></span><span style=display:flex><span>				c.reduceTaskWaitingQ.<span style=color:#50fa7b>PushBack</span>(v)
+</span></span><span style=display:flex><span>			}
+</span></span><span style=display:flex><span>		}
+</span></span><span style=display:flex><span>		mutex.<span style=color:#50fa7b>Unlock</span>()
+</span></span><span style=display:flex><span>		time.<span style=color:#50fa7b>Sleep</span>(time.<span style=color:#50fa7b>Duration</span>(time.Second <span style=color:#ff79c6>*</span> <span style=color:#bd93f9>10</span>))
+</span></span><span style=display:flex><span>	}
+</span></span><span style=display:flex><span>}
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span><span style=color:#8be9fd;font-style:italic>func</span> (c <span style=color:#ff79c6>*</span>Coordinator) <span style=color:#50fa7b>getTimeOutTasks</span>(list <span style=color:#ff79c6>*</span>list.List) (tasks []Task) {
+</span></span><span style=display:flex><span>	<span style=color:#ff79c6>for</span> ele <span style=color:#ff79c6>:=</span> list.<span style=color:#50fa7b>Front</span>(); ele <span style=color:#ff79c6>!=</span> <span style=color:#ff79c6>nil</span>; ele = ele.<span style=color:#50fa7b>Next</span>() {
+</span></span><span style=display:flex><span>		ts <span style=color:#ff79c6>:=</span> ele.Value.(TaskStatus)
+</span></span><span style=display:flex><span>		<span style=color:#ff79c6>if</span> ts.<span style=color:#50fa7b>OverTime</span>() {
+</span></span><span style=display:flex><span>			tasks = <span style=color:#8be9fd;font-style:italic>append</span>(tasks, ts.Task)
+</span></span><span style=display:flex><span>			list.<span style=color:#50fa7b>Remove</span>(ele)
+</span></span><span style=display:flex><span>		}
+</span></span><span style=display:flex><span>	}
+</span></span><span style=display:flex><span>	<span style=color:#ff79c6>return</span> tasks
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><ol start=5><li>最后的Done方法，直接返回finished字段就可以：</li></ol><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#8be9fd;font-style:italic>func</span> (c <span style=color:#ff79c6>*</span>Coordinator) <span style=color:#50fa7b>Done</span>() <span style=color:#8be9fd>bool</span> {
+</span></span><span style=display:flex><span>	<span style=color:#ff79c6>if</span> c.finished {
+</span></span><span style=display:flex><span>		fmt.<span style=color:#50fa7b>Println</span>(<span style=color:#f1fa8c>&#34;==DONE METHOD==&#34;</span>)
+</span></span><span style=display:flex><span>	}
+</span></span><span style=display:flex><span>	<span style=color:#6272a4>// Your code here.
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>	<span style=color:#ff79c6>return</span> c.finished
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><h3 id=workergo-1>worker.go</h3><p>worker的重点在于如何handle map task和reduce task的：</p><p><strong>HandleMapTask：</strong></p><ol><li>读取文件到内存中</li><li>将文件给mapf函数处理，得到kv对</li><li>产生供reduce task使用的中间文件，格式是mr-M-R，例如第5个map task分给第6个reduce task的话就是mr-5-6</li><li>在生成文件时，需要按照实验中的建议，先生成temp file，然后都完成了再rename</li></ol><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#8be9fd;font-style:italic>func</span> <span style=color:#50fa7b>handleMapTask</span>(mapf <span style=color:#8be9fd;font-style:italic>func</span>(<span style=color:#8be9fd>string</span>, <span style=color:#8be9fd>string</span>) []KeyValue, taskStatus <span style=color:#ff79c6>*</span>TaskStatus) {
+</span></span><span style=display:flex><span>   task <span style=color:#ff79c6>:=</span> <span style=color:#ff79c6>&amp;</span>taskStatus.Task
+</span></span><span style=display:flex><span>   filename <span style=color:#ff79c6>:=</span> task.Filename[<span style=color:#bd93f9>0</span>]
+</span></span><span style=display:flex><span>   file, err <span style=color:#ff79c6>:=</span> os.<span style=color:#50fa7b>Open</span>(filename)
+</span></span><span style=display:flex><span>   <span style=color:#ff79c6>if</span> err <span style=color:#ff79c6>!=</span> <span style=color:#ff79c6>nil</span> {
+</span></span><span style=display:flex><span>      log.<span style=color:#50fa7b>Fatalf</span>(<span style=color:#f1fa8c>&#34;cannot open %v&#34;</span>, filename)
+</span></span><span style=display:flex><span>   }
+</span></span><span style=display:flex><span>	 <span style=color:#6272a4>//读取文件内容
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>   content, err <span style=color:#ff79c6>:=</span> ioutil.<span style=color:#50fa7b>ReadAll</span>(file)
+</span></span><span style=display:flex><span>   <span style=color:#ff79c6>if</span> err <span style=color:#ff79c6>!=</span> <span style=color:#ff79c6>nil</span> {
+</span></span><span style=display:flex><span>      log.<span style=color:#50fa7b>Fatalf</span>(<span style=color:#f1fa8c>&#34;cannot read %v&#34;</span>, filename)
+</span></span><span style=display:flex><span>   }
+</span></span><span style=display:flex><span>   file.<span style=color:#50fa7b>Close</span>()
+</span></span><span style=display:flex><span>   <span style=color:#6272a4>//调用提供的mapf函数
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>   kva <span style=color:#ff79c6>:=</span> <span style=color:#50fa7b>mapf</span>(filename, <span style=color:#8be9fd;font-style:italic>string</span>(content))
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>   <span style=color:#6272a4>//创建临时文件
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>   prefix <span style=color:#ff79c6>:=</span> <span style=color:#f1fa8c>&#34;mr-&#34;</span> <span style=color:#ff79c6>+</span> strconv.<span style=color:#50fa7b>Itoa</span>(task.TaskId) <span style=color:#ff79c6>+</span> <span style=color:#f1fa8c>&#34;-&#34;</span>
+</span></span><span style=display:flex><span>   interfiles <span style=color:#ff79c6>:=</span> <span style=color:#8be9fd;font-style:italic>make</span>([]<span style=color:#ff79c6>*</span>os.File, task.Reducer)
+</span></span><span style=display:flex><span>   jsonEncoders <span style=color:#ff79c6>:=</span> <span style=color:#8be9fd;font-style:italic>make</span>([]<span style=color:#ff79c6>*</span>json.Encoder, task.Reducer)
+</span></span><span style=display:flex><span>   <span style=color:#ff79c6>for</span> i <span style=color:#ff79c6>:=</span> <span style=color:#bd93f9>0</span>; i &lt; task.Reducer; i<span style=color:#ff79c6>++</span> {
+</span></span><span style=display:flex><span>      interfiles[i], _ = ioutil.<span style=color:#50fa7b>TempFile</span>(<span style=color:#f1fa8c>&#34;.&#34;</span>, prefix)
+</span></span><span style=display:flex><span>      jsonEncoders[i] = json.<span style=color:#50fa7b>NewEncoder</span>(interfiles[i])
+</span></span><span style=display:flex><span>   }
+</span></span><span style=display:flex><span>   <span style=color:#ff79c6>for</span> _, kv <span style=color:#ff79c6>:=</span> <span style=color:#ff79c6>range</span> kva {
+</span></span><span style=display:flex><span>      key <span style=color:#ff79c6>:=</span> kv.Key
+</span></span><span style=display:flex><span>      partition <span style=color:#ff79c6>:=</span> <span style=color:#50fa7b>ihash</span>(key) <span style=color:#ff79c6>%</span> task.Reducer
+</span></span><span style=display:flex><span>      encoder <span style=color:#ff79c6>:=</span> jsonEncoders[partition]
+</span></span><span style=display:flex><span>      err <span style=color:#ff79c6>:=</span> encoder.<span style=color:#50fa7b>Encode</span>(<span style=color:#ff79c6>&amp;</span>kv)
+</span></span><span style=display:flex><span>      <span style=color:#ff79c6>if</span> err <span style=color:#ff79c6>!=</span> <span style=color:#ff79c6>nil</span> {
+</span></span><span style=display:flex><span>         fmt.<span style=color:#50fa7b>Println</span>(<span style=color:#f1fa8c>&#34;Temp file encode failed&#34;</span>)
+</span></span><span style=display:flex><span>      }
+</span></span><span style=display:flex><span>   }
+</span></span><span style=display:flex><span>	 <span style=color:#6272a4>//Rename临时文件
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>   <span style=color:#ff79c6>for</span> index, tempFile <span style=color:#ff79c6>:=</span> <span style=color:#ff79c6>range</span> interfiles {
+</span></span><span style=display:flex><span>      realPath <span style=color:#ff79c6>:=</span> prefix <span style=color:#ff79c6>+</span> strconv.<span style=color:#50fa7b>Itoa</span>(index)
+</span></span><span style=display:flex><span>      currPath <span style=color:#ff79c6>:=</span> filepath.<span style=color:#50fa7b>Join</span>(tempFile.<span style=color:#50fa7b>Name</span>())
+</span></span><span style=display:flex><span>      os.<span style=color:#50fa7b>Rename</span>(currPath, realPath)
+</span></span><span style=display:flex><span>      task.Result[realPath] = <span style=color:#ff79c6>true</span>
+</span></span><span style=display:flex><span>   }
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>   task.Completed = <span style=color:#ff79c6>true</span>
+</span></span><span style=display:flex><span>   taskStatus.State =FINISHED
+</span></span><span style=display:flex><span>	 <span style=color:#50fa7b>CallTaskCompleted</span>(taskStatus)
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><p><strong>HandleReduceTask：</strong></p><ol><li>从中间文件中读取内容</li><li>进行reduce操作，输出到临时文件</li><li>重命名临时文件</li></ol><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#8be9fd;font-style:italic>func</span> <span style=color:#50fa7b>handleReduceTask</span>(reducef <span style=color:#8be9fd;font-style:italic>func</span>(<span style=color:#8be9fd>string</span>, []<span style=color:#8be9fd>string</span>) <span style=color:#8be9fd>string</span>, taskStatus <span style=color:#ff79c6>*</span>TaskStatus) {
+</span></span><span style=display:flex><span>	task <span style=color:#ff79c6>:=</span> <span style=color:#ff79c6>&amp;</span>taskStatus.Task
+</span></span><span style=display:flex><span>	<span style=color:#8be9fd;font-style:italic>var</span> kva []KeyValue
+</span></span><span style=display:flex><span>	<span style=color:#ff79c6>for</span> _, filepath <span style=color:#ff79c6>:=</span> <span style=color:#ff79c6>range</span> task.Filename {
+</span></span><span style=display:flex><span>		filePtr, err <span style=color:#ff79c6>:=</span> os.<span style=color:#50fa7b>Open</span>(filepath)
+</span></span><span style=display:flex><span>		<span style=color:#ff79c6>if</span> err <span style=color:#ff79c6>!=</span> <span style=color:#ff79c6>nil</span> {
+</span></span><span style=display:flex><span>			fmt.<span style=color:#50fa7b>Println</span>(<span style=color:#f1fa8c>&#34;error when open file in reduce task&#34;</span>)
+</span></span><span style=display:flex><span>		}
+</span></span><span style=display:flex><span>		dec <span style=color:#ff79c6>:=</span> json.<span style=color:#50fa7b>NewDecoder</span>(filePtr)
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>		<span style=color:#ff79c6>for</span> {
+</span></span><span style=display:flex><span>			<span style=color:#8be9fd;font-style:italic>var</span> kv KeyValue
+</span></span><span style=display:flex><span>			<span style=color:#ff79c6>if</span> err <span style=color:#ff79c6>:=</span> dec.<span style=color:#50fa7b>Decode</span>(<span style=color:#ff79c6>&amp;</span>kv); err <span style=color:#ff79c6>!=</span> <span style=color:#ff79c6>nil</span> {
+</span></span><span style=display:flex><span>				<span style=color:#ff79c6>break</span>
+</span></span><span style=display:flex><span>			}
+</span></span><span style=display:flex><span>			kva = <span style=color:#8be9fd;font-style:italic>append</span>(kva, kv)
+</span></span><span style=display:flex><span>		}
+</span></span><span style=display:flex><span>		filePtr.<span style=color:#50fa7b>Close</span>()
+</span></span><span style=display:flex><span>	}
+</span></span><span style=display:flex><span>	sort.<span style=color:#50fa7b>Sort</span>(<span style=color:#50fa7b>ByKey</span>(kva))
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>	oname <span style=color:#ff79c6>:=</span> <span style=color:#f1fa8c>&#34;./mr-out-&#34;</span> <span style=color:#ff79c6>+</span> strconv.<span style=color:#50fa7b>Itoa</span>(task.TaskId)
+</span></span><span style=display:flex><span>	ofile, _ <span style=color:#ff79c6>:=</span> ioutil.<span style=color:#50fa7b>TempFile</span>(<span style=color:#f1fa8c>&#34;.&#34;</span>, <span style=color:#f1fa8c>&#34;mr-*&#34;</span>)
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>	<span style=color:#6272a4>//
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>	<span style=color:#6272a4>// call Reduce on each distinct key in intermediate[],
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>	<span style=color:#6272a4>// and print the result to mr-out-0.
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>	<span style=color:#6272a4>//
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>	i <span style=color:#ff79c6>:=</span> <span style=color:#bd93f9>0</span>
+</span></span><span style=display:flex><span>	<span style=color:#ff79c6>for</span> i &lt; <span style=color:#8be9fd;font-style:italic>len</span>(kva) {
+</span></span><span style=display:flex><span>		j <span style=color:#ff79c6>:=</span> i <span style=color:#ff79c6>+</span> <span style=color:#bd93f9>1</span>
+</span></span><span style=display:flex><span>		<span style=color:#ff79c6>for</span> j &lt; <span style=color:#8be9fd;font-style:italic>len</span>(kva) <span style=color:#ff79c6>&amp;&amp;</span> kva[j].Key <span style=color:#ff79c6>==</span> kva[i].Key {
+</span></span><span style=display:flex><span>			j<span style=color:#ff79c6>++</span>
+</span></span><span style=display:flex><span>		}
+</span></span><span style=display:flex><span>		values <span style=color:#ff79c6>:=</span> []<span style=color:#8be9fd>string</span>{}
+</span></span><span style=display:flex><span>		<span style=color:#ff79c6>for</span> k <span style=color:#ff79c6>:=</span> i; k &lt; j; k<span style=color:#ff79c6>++</span> {
+</span></span><span style=display:flex><span>			values = <span style=color:#8be9fd;font-style:italic>append</span>(values, kva[k].Value)
+</span></span><span style=display:flex><span>		}
+</span></span><span style=display:flex><span>		output <span style=color:#ff79c6>:=</span> <span style=color:#50fa7b>reducef</span>(kva[i].Key, values)
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>		<span style=color:#6272a4>// this is the correct format for each line of Reduce output.
+</span></span></span><span style=display:flex><span><span style=color:#6272a4></span>		fmt.<span style=color:#50fa7b>Fprintf</span>(ofile, <span style=color:#f1fa8c>&#34;%v %v\n&#34;</span>, kva[i].Key, output)
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>		i = j
+</span></span><span style=display:flex><span>	}
+</span></span><span style=display:flex><span>	os.<span style=color:#50fa7b>Rename</span>(filepath.<span style=color:#50fa7b>Join</span>(ofile.<span style=color:#50fa7b>Name</span>()), oname)
+</span></span><span style=display:flex><span>	ofile.<span style=color:#50fa7b>Close</span>()
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>	task.Completed = <span style=color:#ff79c6>true</span>
+</span></span><span style=display:flex><span>	taskStatus.State = FINISHED
+</span></span><span style=display:flex><span>	<span style=color:#50fa7b>CallTaskCompleted</span>(taskStatus)
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><p>在worker中剩下的部分就是请求task的函数和通知task完成的函数，都是直接的RPC Call就可以。</p><h2 id=测试>测试</h2><p>最终，我们需要通过main/test-mr.sh 里面的7个测试，分别用到了mrapps的几个plugin作为测试：</p><p><img src=/img/220122MITLab1/sh.png alt=Tests></p><p>此外，由于测试脚本中用到了很多linux的命令，我后面选择了通过VS Code/GoLand remote到一台Linux Azure VM上进行测试的。用Windows的话可以装一个WSL，然后通过VS Code remote到WSL上面开发，macOS的话可以装对应的命令，然后改一下alias，比如timeout在macOS里面对应的是coreutils包里的gtimeout。</p><hr><ul class=pager><li class=previous><a href=/tech/%E5%9C%A8ASP.NET-Core%E4%B8%AD%E5%BA%94%E7%94%A8JWT/ data-toggle=tooltip data-placement=top title=在ASP.NET-Core中实现内容协商>&larr;
+Previous Post</a></li></ul></div><div class="col-lg-2 col-lg-offset-0
+visible-lg-block
+sidebar-container
+catalog-container"><div class=side-catalog><hr class="hidden-sm hidden-xs"><h5><a class=catalog-toggle href=#>CATALOG</a></h5><ul class=catalog-body></ul></div></div><div class="col-lg-8 col-lg-offset-2
+col-md-10 col-md-offset-1
+sidebar-container"><section><hr class="hidden-sm hidden-xs"><h5><a href=/tags/>FEATURED TAGS</a></h5><div class=tags><a href=/tags/.net title=.net>.net</a>
+<a href=/tags/asp.net title=asp.net>asp.net</a></div></section><section><hr><h5>FRIENDS</h5><ul class=list-inline><li><a target=_blank href></a></li></ul></section></div></div></div></article><footer><div class=container><div class=row><div class="col-lg-8 col-lg-offset-2 col-md-10 col-md-offset-1"><ul class="list-inline text-center"><li><a href=mailto:dukesaika@gmail.com><span class="fa-stack fa-lg"><i class="fas fa-circle fa-stack-2x"></i>
+<i class="fas fa-envelope fa-stack-1x fa-inverse"></i></span></a></li><li><a target=_blank href=https://github.com/dukezys><span class="fa-stack fa-lg"><i class="fas fa-circle fa-stack-2x"></i>
+<i class="fab fa-github fa-stack-1x fa-inverse"></i></span></a></li><li><a target=_blank href=https://www.linkedin.com/in/yinsong-zhao-6957901a9><span class="fa-stack fa-lg"><i class="fas fa-circle fa-stack-2x"></i>
+<i class="fab fa-linkedin fa-stack-1x fa-inverse"></i></span></a></li></ul><p class="copyright text-muted">Copyright &copy; 2022 Ganymede<br>Powered by <a href=https://gohugo.io/>Hugo</a>,
+Theme originated from
+<a href=https://themes.gohugo.io/hugo-theme-cleanwhite>CleanWhite Hugo Theme</a></p></div></div></div></footer><script>function loadAsync(i,t){var n=document,s="script",e=n.createElement(s),o=n.getElementsByTagName(s)[0];e.src=i,t&&e.addEventListener("load",function(e){t(null,e)},!1),o.parentNode.insertBefore(e,o)}</script><script>$("#tag_cloud").length!==0&&loadAsync("/js/jquery.tagcloud.js",function(){$.fn.tagcloud.defaults={color:{start:"#bbbbee",end:"#0085a1"}},$("#tag_cloud a").tagcloud()})</script><script>loadAsync("https://cdnjs.cloudflare.com/ajax/libs/fastclick/1.0.6/fastclick.js",function(){var e=document.querySelector("nav");e&&FastClick.attach(e)})</script><script type=text/javascript>function generateCatalog(e){_containerSelector="div.post-container";var t,n,s,o,i,r=$(_containerSelector),a=r.find("h1,h2,h3,h4,h5,h6");return $(e).html(''),a.each(function(){n=$(this).prop("tagName").toLowerCase(),i="#"+$(this).prop("id"),s=$(this).text(),t=$('<a href="'+i+'" rel="nofollow">'+s+"</a>"),o=$('<li class="'+n+'_nav"></li>').append(t),$(e).append(o)}),!0}generateCatalog(".catalog-body"),$(".catalog-toggle").click(function(e){e.preventDefault(),$(".side-catalog").toggleClass("fold")}),loadAsync("/js/jquery.nav.js",function(){$(".catalog-body").onePageNav({currentClass:"active",changeHash:!1,easing:"swing",filter:"",scrollSpeed:700,scrollOffset:0,scrollThreshold:.2,begin:null,end:null,scrollChange:null,padding:80})})</script></body></html>
